@@ -1,0 +1,639 @@
+import os
+import streamlit as st
+import pandas as pd
+import altair as alt
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+from transformers import pipeline
+import time
+
+# --------------------------------------------------
+# Fake News Risk Detection
+# --------------------------------------------------
+candidate_labels = [
+    "credible factual news",
+    "sensational clickbait",
+    "misleading or exaggerated news",
+    "conspiracy theory",
+    "paranormal or UFO claim", 
+    "ufo",
+    "alien",
+    "alien invasion",
+    "extraterrestrial",
+    "area 51",
+    "unidentified flying object",
+    "alien contact",
+    "predicted alien invasion",
+    "shocking",
+    "breaking",
+    "viral",
+    "you won't believe",
+    "mind-blowing",
+    "must watch",
+    "sparks panic",
+    "government cover-up",
+    "secret files",
+    "hidden agenda",
+    "classified document",
+    "leaked documents",
+    "miracle cure",
+    "secret formula",
+    "instant cure",
+    "doctors hate this"
+]
+
+risk_weights = {
+    "credible factual news": 0.0,
+    "sensational clickbait": 0.4,
+    "misleading or exaggerated news": 0.6,
+    "paranormal or UFO claim": 1,
+    "conspiracy theory": 0.8,
+    "ufo": 1.0,
+    "alien": 1.0,
+    "alien invasion": 1.0,
+    "extraterrestrial": 1.0,
+    "area 51": 1.0,
+    "unidentified flying object": 1.0,
+    "alien contact": 1.0,
+    "predicted alien invasion": 1.0,
+    "shocking": 0.1,
+    "breaking": 0.1,
+    "viral": 0.4,
+    "you won't believe": 0.5,
+    "mind-blowing": 0.1,
+    "must watch": 0.1,
+    "sparks panic": 0.5,
+    "government cover-up": 1.0,
+    "secret files": 0.8,
+    "hidden agenda": 0.9,
+    "classified document": 0.8,
+    "leaked documents": 0.8,
+    "miracle cure": 1.0,
+    "secret formula": 1.0,
+    "instant cure": 1.0,
+    "doctors hate this": 0.6
+}
+
+def zero_shot_risk_score(text):
+    classifier = get_classifier()
+    result = classifier(
+        text,
+        candidate_labels=candidate_labels,
+        hypothesis_template="This news article is {}."
+    )
+    risk = 0.0
+    for label, score in zip(result["labels"], result["scores"]):
+        risk += score * risk_weights[label]
+    return round(risk * 100, 2)
+
+def risk_category(risk_percentage):
+    if risk_percentage <= 10:
+        return "✅ Very Low Risk"
+    elif risk_percentage <= 30:
+        return "🟢 Low Risk"
+    elif risk_percentage <= 50:
+        return "🟡 Medium Risk"
+    elif risk_percentage <= 70:
+        return "⚠️ High Risk"
+    else:
+        return "🚨 Very High Risk"
+
+# --------------------------------------------------
+# Cached classifier
+# --------------------------------------------------
+@st.cache_resource
+def get_classifier():
+    return pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+
+# --------------------------------------------------
+# Safe JSONL Loader
+# --------------------------------------------------
+def load_jsonl(path: str) -> pd.DataFrame:
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return pd.DataFrame()
+    try:
+        return pd.read_json(path, lines=True)
+    except ValueError:
+        return pd.DataFrame()
+
+# --------------------------------------------------
+# Streamlit Config
+# --------------------------------------------------
+st.set_page_config(page_title="Misinformation Risk Dashboard", layout="wide", initial_sidebar_state="expanded")
+
+# Custom CSS for better styling
+st.markdown("""
+    <style>
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 20px;
+    }
+    .stat-card {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .metric-value {
+        font-size: 32px;
+        font-weight: bold;
+        margin: 10px 0;
+    }
+    .metric-label {
+        font-size: 14px;
+        opacity: 0.9;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.markdown("""
+    <div class="main-header">
+        <h1>🔥 Misinformation Risk Dashboard</h1>
+        <p>Real-time detection of trending fake news and misinformation</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --------------------------------------------------
+# Sidebar - Auto Refresh Controls
+# --------------------------------------------------
+st.sidebar.markdown("### ⚙️ Dashboard Settings")
+st.sidebar.divider()
+
+# Auto-refresh interval - 2 minutes default
+refresh_interval = 600  # 2 minutes
+
+st.sidebar.success(f"✅ Auto-refresh enabled: Every 5 minutes")
+
+VELOCITY_FILE = "output/velocity.jsonl"
+ARTICLE_FILE = "output/articles.jsonl"
+
+# --------------------------------------------------
+# Load Data
+# --------------------------------------------------
+velocity_df = load_jsonl(VELOCITY_FILE)
+article_df = load_jsonl(ARTICLE_FILE)
+
+# Only velocity is mandatory
+if velocity_df.empty:
+    st.warning("Waiting for velocity data...")
+    st.stop()
+
+# --------------------------------------------------
+# Normalize time using _pw_window_start
+# --------------------------------------------------
+velocity_df["_pw_window_start"] = pd.to_datetime(
+    velocity_df["_pw_window_start"], errors="coerce"
+)
+
+# --------------------------------------------------
+# Keep ONLY latest window per event_id
+# --------------------------------------------------
+velocity_latest = (
+    velocity_df
+    .sort_values("_pw_window_start", ascending=False)
+    .drop_duplicates(subset="event_id", keep="first")
+)
+
+# --------------------------------------------------
+# Sort by article_count descending
+# --------------------------------------------------
+velocity_latest = velocity_latest.sort_values("article_count", ascending=False)
+                       
+# --------------------------------------------------
+# Merge headlines (OPTIONAL)
+# --------------------------------------------------
+if not article_df.empty and "event_id" in article_df.columns:
+    article_latest = (
+        article_df
+        .sort_values("timestamp", ascending=False)
+        .drop_duplicates(subset="event_id", keep="first")
+        [["event_id", "headline", "text", "timestamp"]]
+    )
+    merged_df = velocity_latest.merge(
+        article_latest, on="event_id", how="left"
+    )
+else:
+    merged_df = velocity_latest.copy()
+    merged_df["headline"] = "Headline not available"
+
+# --------------------------------------------------
+# Classify emotions and calculate risk scores (cached)
+# --------------------------------------------------
+@st.cache_data
+def classify_emotions(df):
+    if df.empty:
+        return df
+    classifier = get_classifier()
+    emotions = []
+    emotion_scores_list = []
+    risk_scores = []
+    for _, row in df.iterrows():
+        text = row["text"]
+        if pd.isna(text) or text == "":
+            emotions.append("unknown")
+            emotion_scores_list.append({"fear": 0.2, "anger": 0.2, "sadness": 0.2, "joy": 0.2, "trust": 0.2})
+            risk_scores.append(0.0)
+        else:
+            # Emotion classification
+            result = classifier(text, candidate_labels=["fear", "anger", "sadness", "joy", "trust"])
+            emotions.append(result["labels"][0])
+            # Store emotion scores as dictionary
+            emotion_scores = {label: score for label, score in zip(result["labels"], result["scores"])}
+            emotion_scores_list.append(emotion_scores)
+            
+            # Risk score calculation
+            risk = 0.0
+            risk_result = classifier(
+                text,
+                candidate_labels=candidate_labels,
+                hypothesis_template="This news article is {}."
+            )
+            for label, score in zip(risk_result["labels"], risk_result["scores"]):
+                risk += score * risk_weights[label]
+            risk_scores.append(round(risk * 100, 2))
+    df = df.copy()
+    df["emotion"] = emotions
+    df["emotion_scores"] = emotion_scores_list
+    df["risk_score"] = risk_scores
+    return df
+
+if not merged_df.empty:
+    merged_df = classify_emotions(merged_df)
+
+# --------------------------------------------------
+# Sort by trend (article_count)
+# --------------------------------------------------
+merged_df = merged_df.sort_values(
+    "article_count", ascending=False
+)
+
+# --------------------------------------------------
+# Create Tabs
+# --------------------------------------------------
+tab1, tab2 = st.tabs(["🏠 Home", "📊 News Trend Analytics"])
+
+with tab1:
+    if "selected_event" in st.session_state:
+        # Detail view
+        selected = st.session_state["selected_event"]
+        event_data = merged_df[merged_df["event_id"] == selected].iloc[0]
+        rank = merged_df.index.get_loc(event_data.name) + 1
+        st.header(f"Trending #{rank}")
+        st.subheader(event_data["headline"])
+        st.markdown("**Article Description:**")
+        st.markdown(f'<p style="font-size: 16px; line-height: 1.6;">{event_data["text"]}</p>', unsafe_allow_html=True)
+        
+        # Emotion and Risk Score Display
+        col_left, col_right = st.columns([0.5, 0.5])
+        
+        with col_left:
+            st.subheader("Emotion")
+            emotion = event_data["emotion"]
+            if emotion == "joy":
+                emoji = "😄"
+                color = "green"
+            elif emotion == "sadness":
+                emoji = "😭"
+                color = "blue"
+            elif emotion == "anger":
+                emoji = "😡"
+                color = "red"
+            elif emotion == "fear":
+                emoji = "😱"
+                color = "orange"
+            elif emotion == "trust":
+                emoji = "🤝"
+                color = "green"
+            else:
+                emoji = "🤔"
+                color = "gray"
+            st.markdown(f'<div style="background-color: {color}; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-size: 18px;">{emoji}<br><small>{emotion.upper()}</small></div>', unsafe_allow_html=True)
+            
+            # Emotion pie chart
+            emotion_scores = event_data["emotion_scores"]
+            emotion_df = pd.DataFrame({
+                "emotions": list(emotion_scores.keys()),
+                "score": list(emotion_scores.values())
+            })
+            
+            emotion_colors = {
+                "joy": "#2ECC71",
+                "sadness": "#3498DB",
+                "anger": "#E74C3C",
+                "fear": "#FF9800",
+                "trust": "#9B59B6"
+            }
+            
+            fig_emotion = px.pie(
+                emotion_df,
+                names="emotions",
+                values="score",
+                hole=0.4,
+                color="emotions",
+                color_discrete_map=emotion_colors
+            )
+            fig_emotion.update_layout(height=300, showlegend=True)
+            st.plotly_chart(fig_emotion, use_container_width=True)
+        
+        with col_right:
+            st.subheader("Misinformation Risk", anchor=False)
+            st.write("")  # Add spacing
+            risk_score = event_data["risk_score"]
+            risk_cat = risk_category(risk_score)
+            
+            # Circular progress bar using custom HTML/CSS
+            if risk_score <= 10:
+                risk_color = "#4CAF50"
+            elif risk_score <= 30:
+                risk_color = "#8BC34A"
+            elif risk_score <= 50:
+                risk_color = "#FFC107"
+            elif risk_score <= 70:
+                risk_color = "#FF9800"
+            else:
+                risk_color = "#F44336"
+            
+            st.markdown(f'''
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; margin-top: 10px;">
+                <svg width="120" height="120" style="transform: rotate(-90deg);">
+                    <circle cx="60" cy="60" r="54" stroke="#E0E0E0" stroke-width="8" fill="none"></circle>
+                    <circle cx="60" cy="60" r="54" stroke="{risk_color}" stroke-width="8" fill="none"
+                        stroke-dasharray="{339.29 * risk_score / 100}" stroke-dashoffset="0"
+                        style="stroke-linecap: round;"></circle>
+                </svg>
+                <div style="text-align: center; margin-top: -80px;">
+                    <div style="font-size: 28px; font-weight: bold;">{risk_score:.0f}%</div>
+                    <div style="font-size: 14px; color: #666; margin-top: 35px;">{risk_cat}</div>
+                </div>
+            </div>
+            ''', unsafe_allow_html=True)
+        
+        # Trend section
+        st.divider()
+        st.subheader("Article Velocity Trend")
+        
+        # Get velocity data for selected event from velocity_df
+        if not velocity_df.empty:
+            event_velocity = velocity_df[velocity_df["event_id"] == selected]
+            if not event_velocity.empty:
+                # Sort by _pw_window_start and prepare data
+                event_velocity_sorted = event_velocity.sort_values('_pw_window_start')
+                # Convert _pw_window_start to datetime
+                event_velocity_sorted['_pw_window_start'] = pd.to_datetime(event_velocity_sorted['_pw_window_start'], errors='coerce')
+                trend_df = event_velocity_sorted[['_pw_window_start', 'article_count']].dropna()
+                
+                # Plot velocity trend
+                if not trend_df.empty:
+                    st.line_chart(trend_df.set_index('_pw_window_start')['article_count'], height=250, use_container_width=True)
+        
+        if st.button("Back to Trending"):
+            del st.session_state["selected_event"]
+            st.rerun()
+    else:
+        st.header("Trending News")
+        
+        # Display overall statistics
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        
+        with col_stat1:
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="metric-label">Total Trending Events</div>
+                <div class="metric-value">{len(merged_df)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_stat2:
+            avg_articles = merged_df['article_count'].mean() if not merged_df.empty else 0
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="metric-label">Avg Articles/Event</div>
+                <div class="metric-value">{avg_articles:.0f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_stat3:
+            max_articles = merged_df['article_count'].max() if not merged_df.empty else 0
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="metric-label">Peak Articles</div>
+                <div class="metric-value">{max_articles:.0f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_stat4:
+            high_risk = len(merged_df[merged_df['risk_score'] > 70]) if 'risk_score' in merged_df.columns else 0
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="metric-label">High Risk Events</div>
+                <div class="metric-value">{high_risk}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        
+        st.divider()
+        
+        # Column headers
+        col1, col2, col3, col4 = st.columns([0.05, 0.55, 0.2, 0.2])
+        with col1:
+            st.markdown("**Rank**")
+        with col2:
+            st.markdown("**Headline**")
+        with col3:
+            st.markdown("**Emotion**")
+        with col4:
+            st.markdown("**Risk**")
+        st.divider()  # Optional separator
+        for rank, (_, row) in enumerate(merged_df.iterrows(), start=1):
+            col1, col2, col3, col4 = st.columns([0.05, 0.55, 0.2, 0.2])
+            with col1:
+                st.markdown(f'<div style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; line-height: 30px; font-weight: bold;">{rank}</div>', unsafe_allow_html=True)
+            with col2:
+                if st.button(row["headline"], key=row["event_id"]):
+                    st.session_state["selected_event"] = row["event_id"]
+                    st.rerun()
+            with col3:
+                emotion = row["emotion"]
+                if emotion == "joy":
+                    emoji = "😄"
+                    color = "green"
+                elif emotion == "sadness":
+                    emoji = "😭"
+                    color = "blue"
+                elif emotion == "anger":
+                    emoji = "😡"
+                    color = "red"
+                elif emotion == "fear":
+                    emoji = "😱"
+                    color = "orange"
+                elif emotion == "trust":
+                    emoji = "🤝"
+                    color = "green"
+                else:
+                    emoji = "🤔"
+                    color = "gray"
+                st.markdown(f'<div style="background-color: {color}; color: white; padding: 5px; border-radius: 5px; text-align: center; font-weight: bold;">{emoji}<br><small>{emotion.upper()}</small></div>', unsafe_allow_html=True)
+            with col4:
+                risk_score = zero_shot_risk_score(row["text"])
+                if risk_score <= 10:
+                    risk_color = "#4CAF50"
+                elif risk_score <= 30:
+                    risk_color = "#8BC34A"
+                elif risk_score <= 50:
+                    risk_color = "#FFC107"
+                elif risk_score <= 70:
+                    risk_color = "#FF9800"
+                else:
+                    risk_color = "#F44336"
+                
+                # Circular progress bar for risk
+                st.markdown(f'''
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
+                    <svg width="80" height="80" style="transform: rotate(-90deg);">
+                        <circle cx="40" cy="40" r="36" stroke="#E0E0E0" stroke-width="6" fill="none"></circle>
+                        <circle cx="40" cy="40" r="36" stroke="{risk_color}" stroke-width="6" fill="none"
+                            stroke-dasharray="{226.19 * risk_score / 100}" stroke-dashoffset="0"
+                            style="stroke-linecap: round;"></circle>
+                    </svg>
+                    <div style="text-align: center; margin-top: -60px;">
+                        <div style="font-size: 18px; font-weight: bold;">{risk_score:.0f}%</div>
+                    </div>
+                </div>
+                ''', unsafe_allow_html=True)
+            st.divider()
+
+# --------------------------------------------------
+# Analytics Tab - News Trend Over Time
+# --------------------------------------------------
+with tab2:
+    st.header("📊 News Trend Analytics")
+    st.markdown("Visualize how many articles are being published over time for different events")
+    
+    st.divider()
+    
+    if not velocity_df.empty:
+        # Prepare data for overall trend
+        velocity_df_sorted = velocity_df.sort_values("_pw_window_start")
+        
+        # Total articles over time
+        st.subheader("Total News Volume Over Time")
+        total_trend = velocity_df_sorted.groupby("_pw_window_start")["article_count"].sum().reset_index()
+        total_trend.columns = ["Time", "Total Articles"]
+        
+        if not total_trend.empty:
+            fig_total = px.line(
+                total_trend,
+                x="Time",
+                y="Total Articles",
+                title="Total Articles Published Over Time",
+                markers=True,
+                template="plotly_dark"
+            )
+            fig_total.update_layout(
+                hovermode="x unified",
+                height=400,
+                xaxis_title="Time",
+                yaxis_title="Number of Articles"
+            )
+            st.plotly_chart(fig_total, use_container_width=True)
+        
+        st.divider()
+        
+        # Top events over time
+        st.subheader("Top 5 Events - Articles Over Time")
+        
+        # Get top 5 events by article count
+        top_events = velocity_df.groupby("event_id")["article_count"].max().nlargest(5).index.tolist()
+        
+        fig_multi = go.Figure()
+        
+        for event_id in top_events:
+            event_data = velocity_df[velocity_df["event_id"] == event_id].sort_values("_pw_window_start")
+            if not event_data.empty:
+                fig_multi.add_trace(go.Scatter(
+                    x=event_data["_pw_window_start"],
+                    y=event_data["article_count"],
+                    mode='lines+markers',
+                    name=event_id,
+                    hovertemplate='<b>%{fullData.name}</b><br>Time: %{x}<br>Articles: %{y}<extra></extra>'
+                ))
+        
+        fig_multi.update_layout(
+            title="Top 5 Events - Article Count Over Time",
+            xaxis_title="Time",
+            yaxis_title="Number of Articles",
+            hovermode="x unified",
+            height=450,
+            template="plotly_dark",
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        )
+        st.plotly_chart(fig_multi, use_container_width=True)
+        
+        st.divider()
+        
+        # Event selection for detailed view
+        st.subheader("Detailed Event Trend")
+        selected_event_analytics = st.selectbox(
+            "Select an event to view detailed trend",
+            options=velocity_df["event_id"].unique(),
+            key="event_selector"
+        )
+        
+        if selected_event_analytics:
+            event_trend = velocity_df[velocity_df["event_id"] == selected_event_analytics].sort_values("_pw_window_start")
+            
+            if not event_trend.empty:
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    max_count = event_trend["article_count"].max()
+                    st.metric("Peak Articles", int(max_count))
+                
+                with col2:
+                    avg_count = event_trend["article_count"].mean()
+                    st.metric("Average Articles", f"{avg_count:.1f}")
+                
+                with col3:
+                    total_count = event_trend["article_count"].sum()
+                    st.metric("Total Articles", int(total_count))
+                
+                st.markdown("")
+                
+                # Detailed trend chart
+                fig_detail = px.bar(
+                    event_trend,
+                    x="_pw_window_start",
+                    y="article_count",
+                    title=f"Article Trend for Event: {selected_event_analytics}",
+                    template="plotly_dark",
+                    color="article_count",
+                    color_continuous_scale="reds"
+                )
+                fig_detail.update_layout(
+                    height=350,
+                    xaxis_title="Time",
+                    yaxis_title="Number of Articles",
+                    hovermode="x unified"
+                )
+                st.plotly_chart(fig_detail, use_container_width=True)
+    else:
+        st.warning("No velocity data available yet. Please wait for the pipeline to generate data.")
+
+
+if refresh_interval > 0:
+    # Use a placeholder to show refresh countdown
+    refresh_placeholder = st.empty()
+    
+    for remaining in range(refresh_interval, 0, -1):
+        with refresh_placeholder.container():
+            st.sidebar.info(f"⏱️ Next refresh in {remaining}s...")
+        time.sleep(1)
+    
+    # Trigger page rerun
+    st.rerun()
