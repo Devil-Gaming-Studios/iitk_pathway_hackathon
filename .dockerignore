@@ -1,0 +1,30 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Virtual env ---
+venv/
+.env/
+
+# --- Git ---
+.git/
+.gitignore
+
+# --- Data (VERY IMPORTANT) ---
+data/
+output/
+*.csv
+*.json
+*.jsonl
+
+# --- ML caches ---
+.cache/
+**/.cache/
+huggingface/
+models/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
