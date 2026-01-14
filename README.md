@@ -1,145 +1,78 @@
-# iitk_pathway_hackathon
-🔥 Misinformation Risk Dashboard
-Project Overview
+# 🔥 Misinformation Risk Dashboard
+### *IITK Pathway Hackathon*
 
-The Misinformation Risk Dashboard is a real-time web application designed to detect and visualize trending fake news, sensational headlines, and misinformation across multiple sources. Using state-of-the-art NLP models, the dashboard classifies articles based on credibility and assigns a risk score, helping users quickly identify potentially misleading or sensational news.
+[![Pathway](https://img.shields.io/badge/Framework-Pathway-brightgreen)](https://pathway.com/)
+[![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-red)](https://streamlit.io/)
+[![HuggingFace](https://img.shields.io/badge/NLP-HuggingFace-yellow)](https://huggingface.co/)
+[![Docker](https://img.shields.io/badge/Deployment-Docker-blue)](https://www.docker.com/)
 
-Key Features
+The **Misinformation Risk Dashboard** is a real-time web application designed to detect and visualize trending fake news, sensational headlines, and misinformation across multiple sources. Using state-of-the-art NLP models, it assigns a risk score to help users identify misleading content instantly.
 
-Real-time detection of trending news events
+---
 
-Automatic risk scoring for misinformation using zero-shot classification
+## 🎯 Project Overview
+In a world of rapid information flow, identifying "fake news" is a race against time. This project leverages the **Pathway framework** for high-performance stream processing to:
+* **Detect** trending news events as they happen.
+* **Analyze** emotional triggers (Fear, Anger, Trust).
+* **Score** articles based on credibility and sensationalism.
+* **Visualize** event velocity and risk distributions.
 
-Emotion classification of articles (fear, anger, joy, sadness, trust)
+---
 
-Visualizations for:
+## 🚀 Key Features
 
-Article trends over time
+| Feature | Description |
+| :--- | :--- |
+| **Real-time Detection** | Instant grouping of trending news events using semantic embeddings. |
+| **Risk Scoring** | Automatic misinformation scoring using zero-shot classification. |
+| **Emotion Analysis** | Classifies articles into Fear, Anger, Joy, Sadness, and Trust. |
+| **Dynamic Analytics** | Visualizes event velocity (growth rate) and article trends over time. |
+| **Auto-Refresh UI** | A live-updating Streamlit interface for hands-free monitoring. |
 
-Event velocity (number of articles per event)
+---
 
-Emotion distribution per event
+## 🏗️ Application Architecture
 
-Circular risk indicators
+### 1. Data Ingestion 📥
+* Uses a streaming CSV (`stream.csv`) to simulate continuous news ingestion.
+* Processes data in near real-time via **Pathway**.
+* Generates semantic embeddings using `SentenceTransformer`.
 
-Auto-refreshing interface for live updates
+### 2. Processing & Risk Analysis 🧠
+* **Clustering:** Groups similar articles using cosine similarity.
+* **Classification:** Uses Hugging Face zero-shot models for Credibility and Emotion analysis.
+* **Risk Engine:** Computes a weighted risk score based on model outputs.
 
-User-friendly dashboards with detailed article views
+### 3. Visualization & Output 📊
+* **Home Tab:** Circular risk indicators and emotion distribution.
+* **News Trend Analytics:** Deep dive into event velocity and history.
+* **Data Exports:** Continuous updates to `articles.jsonl` and `velocity.jsonl`.
 
-Application Architecture
-1. Data Ingestion
+---
 
-Uses a streaming CSV (stream.csv) to simulate continuous news ingestion
+## 🛠️ Project Setup
 
-Processes articles in near real time using the Pathway framework
-
-Computes semantic embeddings using SentenceTransformer
-
-2. Processing & Risk Analysis
-
-Groups semantically similar articles using cosine similarity
-
-Assigns event IDs for clustering
-
-Uses Hugging Face zero-shot classification to analyze:
-
-Credibility and sensationalism
-
-Emotional tone of articles
-
-Computes a weighted misinformation risk score
-
-3. Visualization (Streamlit Frontend)
-
-Home Tab: Trending events, emotions, and risk indicators
-
-News Trend Analytics Tab: Event velocity and historical trends
-
-Fully interactive, auto-refreshing dashboard
-
-4. Outputs
-
-articles.jsonl – Processed article data
-
-velocity.jsonl – Event-wise article velocity data
-
-Project Setup
-
-Follow the steps below to run the project locally.
-
-Step 1: Clone the Repository
-git clone https://github.com/your-username/misinformation-dashboard.git
+### Step 1: Clone the Repository
+```bash
+git clone [https://github.com/your-username/misinformation-dashboard.git](https://github.com/your-username/misinformation-dashboard.git)
 cd misinformation-dashboard
 
-Step 2: Open Docker Desktop
-
-Make sure Docker Desktop is installed and running before proceeding.
-
-Step 3: Build the Docker Image
-
-From the project root directory, run:
+Step 2: Build the Image (Docker)
+Bash
 
 docker build --no-cache -t dataquest-pathway .
+Step 3: Launch the Pathway Pipeline
+Run the container to start processing the live stream:
 
+Bash
 
-This builds the Docker image required to run the Pathway streaming pipeline.
+docker run -it --rm -v ${PWD}:/app dataquest-pathway python /app/app.py
+⚠️ Important: Keep this terminal running to ensure the dashboard has live data to read.
 
-Step 4: Run the Pathway Pipeline
+Step 4: Run the Dashboard
+Open a new terminal and run the Streamlit UI:
 
-Run the following command to start the streaming pipeline:
-
-docker run -it --rm \
-  -v ${PWD}:/app \
-  dataquest-pathway \
-  python /app/app.py
-
-
-What this does:
-
-Mounts the current project directory into the container
-
-Executes app.py
-
-Continuously processes streaming data
-
-Generates:
-
-output/articles.jsonl
-
-output/velocity.jsonl
-
-⚠️ Keep this process running while using the dashboard.
-
-Step 5: Install Python Dependencies (Local)
-
-Open a new terminal (outside Docker) and run:
+Bash
 
 pip install -r requirements.txt
-
-Step 6: Run the Streamlit Dashboard
 streamlit run dashboard.py
-
-
-Open the URL shown in the terminal (usually http://localhost:8501)
-
-The dashboard will auto-refresh and display live analytics
-
-Data Flow Summary
-
-stream.csv simulates incoming news data
-
-app.py processes articles and computes trends
-
-Output files are continuously updated
-
-dashboard.py visualizes real-time results
-
-Notes
-
-No API keys required
-
-Fully open-source models
-
-Runs offline after setup
-
-Docker ensures reproducible execution
