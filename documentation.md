@@ -31,19 +31,7 @@ The system continuously ingests news articles, clusters them into evolving event
 
 ## 3. Repository Structure
 
-```
-iitk_pathway_hackathon/
-├── app.py              # Pathway streaming & event detection engine
-├── dashboard.py        # Streamlit visualization dashboard
-├── Dockerfile          # Containerized deployment
-├── requirements.txt    # Python dependencies
-├── data/
-│   └── stream.csv      # Input news stream (replayed)
-├── output/
-│   ├── articles.jsonl  # Enriched article stream
-│   └── velocity.jsonl  # Event velocity metrics
-└── README.md           # Project overview
-```
+![System Architecture](docs/repoimage.png)
 
 ---
 
