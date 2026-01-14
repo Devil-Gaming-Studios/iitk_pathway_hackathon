@@ -1,137 +1,248 @@
-# 📘 Misinformation Risk Dashboard – Technical Documentation
+# IITK Pathway Hackathon – Real-Time Misinformation Detection System
 
-## Overview
-The **Misinformation Risk Dashboard** is a real-time system designed to detect, analyze, and visualize potentially misleading or sensational news events.  
-It uses **Pathway** as a streaming data engine and modern **NLP models** to perform semantic clustering, event detection, and misinformation risk assessment in near real time.
+## 1. Project Overview
 
----
+This project was developed as part of the **IIT Kanpur Pathway Hackathon**. It implements a **real-time news monitoring and misinformation risk detection system** using **Pathway** for streaming data processing and **Streamlit** for visualization.
 
-## System Architecture
+The system continuously ingests news articles, clusters them into evolving events using semantic similarity, tracks their velocity over time, and analyzes each event for emotional tone and misinformation risk using modern NLP models.
 
-The system follows a **streaming-first architecture** optimized for incremental computation and low-latency updates.
+### Key Objectives
 
-### High-Level Architecture Diagram
-![System Architecture](docs/architecture.png)
-
-### Component Overview
-- **Data Source**: A streaming CSV (`stream.csv`) simulates a continuous news feed.
-- **Pathway Engine**: Handles streaming ingestion, stateful processing, and windowed aggregation.
-- **Semantic Processing Layer**:
-  - Sentence embeddings using SentenceTransformer
-  - Event assignment via cosine similarity
-  - Velocity computation using tumbling windows
-- **Storage Layer**:
-  - `articles.jsonl` – enriched article data
-  - `velocity.jsonl` – event-wise velocity metrics
-- **Visualization Layer**:
-  - Streamlit-based dashboard with live updates
+* Detect trending news events in real time
+* Cluster semantically similar articles into evolving events
+* Measure how fast an event is spreading (article velocity)
+* Assess misinformation / fake news risk
+* Provide an interactive dashboard for monitoring and analysis
 
 ---
 
-## Streaming & Incremental Computation
+## 2. High-Level Architecture
 
-Pathway enables **incremental updates** without recomputing historical data.  
-Each incoming article:
-1. Is embedded into a semantic vector
-2. Is matched against existing event centroids
-3. Either joins an existing event or creates a new one
-4. Updates velocity metrics inside time windows
+**Pipeline Flow:**
 
-This design ensures:
-- Low latency
-- Bounded memory usage
-- Real-time responsiveness
+```
+CSV Stream → Pathway Streaming Engine → Event Detection & Velocity → JSONL Outputs → Streamlit Dashboard
+```
+
+**Core Components:**
+
+* **Pathway** – Streaming ingestion, windowing, aggregation
+* **Sentence-BERT** – Semantic text embeddings
+* **Zero-Shot NLP Models** – Emotion & misinformation analysis
+* **Streamlit** – Interactive visualization layer
 
 ---
 
-## Design Decisions
+## 3. Repository Structure
+
+```
+iitk_pathway_hackathon/
+├── app.py              # Pathway streaming & event detection engine
+├── dashboard.py        # Streamlit visualization dashboard
+├── Dockerfile          # Containerized deployment
+├── requirements.txt    # Python dependencies
+├── data/
+│   └── stream.csv      # Input news stream (replayed)
+├── output/
+│   ├── articles.jsonl  # Enriched article stream
+│   └── velocity.jsonl  # Event velocity metrics
+└── README.md           # Project overview
+```
+
+---
+
+## 4. Data Flow & Workflow
+
+### Step-by-Step Workflow
+
+#### 1. News Ingestion
+
+* News articles are read from `data/stream.csv`
+* `pw.demo.replay_csv` replays the dataset as a simulated live stream
+
+#### 2. Text Embedding
+
+* Article text is converted into dense vectors using:
+
+```
+SentenceTransformer("all-MiniLM-L6-v2")
+```
+
+* Optimized for fast, real-time semantic similarity
+
+#### 3. Event Detection (Clustering)
+
+* Articles are assigned an `event_id` based on cosine similarity
+* If similarity ≥ **0.78**, article joins an existing event
+* Otherwise, a new event is dynamically created
+
+#### 4. Temporal Aggregation
+
+* Articles are grouped using **30-minute tumbling windows**
+* Velocity = number of articles per event per window
+
+#### 5. Output Generation
+
+* **Enriched articles** → `output/articles.jsonl`
+* **Event velocity metrics** → `output/velocity.jsonl`
+
+#### 6. Dashboard Consumption
+
+* Streamlit dashboard reads JSONL outputs
+* Performs emotion detection and misinformation scoring
+* Displays interactive visualizations
+
+---
+
+## 5. app.py – Streaming & Event Detection Engine
+
+### Core Responsibilities
+
+* Real-time ingestion of news articles
+* Semantic clustering into events
+* Event velocity computation
+
+### Key Components
+
+#### 5.1 Embedding Model
+
+* `all-MiniLM-L6-v2` Sentence-BERT
+* Lightweight and efficient
+* Well-suited for streaming pipelines
+
+#### 5.2 Stateful Event Assignment
+
+* Maintains in-memory event centroids
+* Uses cosine similarity for assignment
+* Dynamically creates new events
+
+**Design Rationale:**
+
+A centroid-based approach is significantly faster than full clustering, making it ideal for real-time streaming scenarios.
+
+#### 5.3 Velocity Calculation
+
+* Uses Pathway `windowby`
+* 30-minute tumbling windows
+* Measures how quickly an event is gaining traction
+
+---
+
+## 6. dashboard.py – Visualization & Risk Analysis
+
+### Dashboard Features
+
+#### 6.1 Trending Events
+
+* Ranked list by article velocity
+* Expandable event details
+
+#### 6.2 Emotion Analysis
+
+Zero-shot emotion classification with the following labels:
+
+* Fear 😱
+* Anger 😡
+* Sadness 😭
+* Joy 😄
+* Trust 🤝
+
+#### 6.3 Misinformation Risk Scoring
+
+* Uses **BART-large-MNLI** zero-shot classifier
+* Weighted misinformation-related labels
+* Produces a **0–100 risk score**
+
+##### Risk Categories
+
+| Score Range | Risk Level     |
+| ----------- | -------------- |
+| 0–10        | Very Low Risk  |
+| 11–30       | Low Risk       |
+| 31–50       | Medium Risk    |
+| 51–70       | High Risk      |
+| 71–100      | Very High Risk |
+
+#### 6.4 Analytics View
+
+* News volume over time
+* Top 5 trending events
+* Per-event temporal breakdown
+
+---
+
+## 7. Design Decisions & Rationale
 
 ### Why Pathway?
-Pathway provides native support for:
-- Streaming data ingestion
-- Stateful computation
-- Windowed aggregations
-- Incremental processing
 
-These capabilities make it well-suited for real-time misinformation detection.
-
-### Why SentenceTransformer + Cosine Similarity?
-- Lightweight and fast embeddings
-- Efficient semantic grouping
-- Minimal computational overhead
-
-### Why Tumbling Windows?
-- Clean temporal segmentation
-- Prevents unbounded state growth
-- Ideal for velocity-based trend detection
+* Native support for streaming data
+* Built-in windowing & time-based aggregation
+* Ideal for real-time hackathon systems
 
 ### Why Zero-Shot Classification?
-- No labeled dataset required
-- Easily extensible to new misinformation categories
-- Flexible and domain-agnostic
+
+* No labeled dataset required
+* Flexible and extensible
+* Rapid experimentation
+
+### Why JSONL Outputs?
+
+* Stream-friendly format
+* Easy incremental reads
+* Works seamlessly with pandas & Streamlit
 
 ---
 
-## Workflow
+## 8. Deployment & Setup
 
-1. Articles enter the system via streaming CSV replay
-2. Text embeddings are computed for each article
-3. Articles are clustered into semantic events
-4. Event velocity is computed over fixed time windows
-5. Outputs are written to JSONL files
-6. The dashboard reads outputs and updates automatically
+### Local Setup
 
----
+#### Step 1: Clone the Repository
 
-## Example Scenario
+```bash
+git clone https://github.com/Devil-Gaming-Studios/misinformation-dashboard.git
+cd misinformation-dashboard
+```
 
-A breaking-news scenario is simulated where multiple sensational articles related to the same topic (e.g., UFO sightings or viral conspiracy claims) enter the stream.
+#### Step 2: Build Docker Image
 
-As the article volume increases:
-- The system groups them into a single event
-- Velocity spikes are detected
-- High misinformation risk is highlighted
-- Emotional indicators such as fear and anger become visible
+```bash
+docker build --no-cache -t dataquest-pathway .
+```
 
----
+#### Step 3: Run Pathway Pipeline
 
-## Scalability & Extensibility
+```bash
+docker run -it --rm -v ${PWD}:/app dataquest-pathway python /app/app.py
+```
 
-- Pathway supports horizontal scaling and distributed execution
-- New data sources can be added with minimal changes
-- The system can be extended to:
-  - Financial news monitoring
-  - Social media trend analysis
-  - Cybersecurity alert aggregation
+⚠️ Keep this terminal running so the dashboard receives live data.
 
----
+#### Step 4: Launch Dashboard
 
-## Observability
-
-System behavior can be observed through:
-- Streaming logs
-- JSONL output files
-- Live dashboard metrics
-
-Velocity trends and emotion distributions provide transparency into system decisions.
+```bash
+pip install -r requirements.txt
+streamlit run dashboard.py
+```
 
 ---
 
-## Example Scenario & Demonstration
+## 9. Limitations
 
-The system is demonstrated using a simulated continuous news stream. 
-Incoming articles are replayed in real time using Pathway’s streaming CSV replay.
+* Event centroids are stored in-memory (non-persistent)
+* Zero-shot models are computationally expensive
+* CSV replay simulates real-time data but is not a live feed
 
-A lightweight Streamlit dashboard is used to visualize:
-- Trending events
-- Article velocity
-- Emotional signals
-- Misinformation risk scores
+---
 
-As new articles arrive, the dashboard updates automatically, demonstrating
-how the system reacts to streaming data and produces real-time insights.
+## 10. Future Improvements
 
-## Conclusion
+* Persistent event storage
+* Incremental centroid updates with decay
+* GPU acceleration for NLP models
+* Integration with live news APIs
+* Alerting system for high-risk events
 
-The Misinformation Risk Dashboard demonstrates how streaming data, modern NLP, and real-time visualization can be combined to detect and analyze misinformation effectively.  
-The architecture is modular, scalable, and adaptable to multiple real-world domains.
+---
+
+**Built for IIT Kanpur Pathway Hackathon 🚀**
