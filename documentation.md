@@ -18,11 +18,7 @@ The system continuously ingests news articles, clusters them into evolving event
 
 ## 2. High-Level Architecture
 
-**Pipeline Flow:**
-
-```
-CSV Stream → Pathway Streaming Engine → Event Detection & Velocity → JSONL Outputs → Streamlit Dashboard
-```
+![System Architecture](docs/architecture.png)
 
 **Core Components:**
 
