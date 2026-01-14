@@ -18,7 +18,7 @@ schema = pw.schema_from_csv("data/stream.csv")
 
 # Use Pathway's demo replay_csv function to simulate continuous streaming of news
 # 'input_rate' controls how fast rows are read (0.05 = slower replay)
-data = pw.demo.replay_csv(path='data/stream.csv', schema=schema, input_rate=0.05)
+data = pw.demo.replay_csv(path='data/stream.csv', schema=schema, input_rate=0.1)
 
 # -------------------- Column Normalization --------------------
 # No additional normalization needed; 'text' column already contains full article content
@@ -94,7 +94,7 @@ data = data.with_columns(timestamp = pw.this.timestamp.dt.strptime(fmt))
 # Tumbling windows of 30 minutes to calculate number of articles per event
 velocity = data.windowby(
     data.timestamp,
-    window=pw.temporal.tumbling(duration=timedelta(minutes=30))
+    window=pw.temporal.tumbling(duration=timedelta(minutes=120))
 ).groupby(
     pw.this.event_id, 
     pw.this._pw_window_start
