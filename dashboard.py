@@ -8,9 +8,8 @@ from datetime import datetime, timedelta
 from transformers import pipeline
 import time
 
-# --------------------------------------------------
-# Fake News Risk Detection
-# --------------------------------------------------
+# Risk detection labels and weights for zero-shot classification
+# Used to identify misinformation patterns, conspiracy theories, and sensational content
 candidate_labels = [
     "credible factual news",
     "sensational clickbait",
@@ -43,6 +42,7 @@ candidate_labels = [
     "doctors hate this"
 ]
 
+# Weight values for each label indicating risk level (0.0 = safe, 1.0 = high risk)
 risk_weights = {
     "credible factual news": 0.0,
     "sensational clickbait": 0.4,
@@ -75,6 +75,7 @@ risk_weights = {
     "doctors hate this": 0.6
 }
 
+# Calculates misinformation risk score for a given text using weighted label classification
 def zero_shot_risk_score(text):
     classifier = get_classifier()
     result = classifier(
@@ -87,6 +88,7 @@ def zero_shot_risk_score(text):
         risk += score * risk_weights[label]
     return round(risk * 100, 2)
 
+# Maps risk score percentage to a categorical label with emoji indicator
 def risk_category(risk_percentage):
     if risk_percentage <= 10:
         return "✅ Very Low Risk"
@@ -99,16 +101,13 @@ def risk_category(risk_percentage):
     else:
         return "🚨 Very High Risk"
 
-# --------------------------------------------------
-# Cached classifier
-# --------------------------------------------------
+# Loads and caches the transformer model for zero-shot classification
+# Cached to avoid reloading the model on every interaction
 @st.cache_resource
 def get_classifier():
     return pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
 
-# --------------------------------------------------
-# Safe JSONL Loader
-# --------------------------------------------------
+# Safely loads JSONL files, returns empty DataFrame if file doesn't exist or is empty
 def load_jsonl(path: str) -> pd.DataFrame:
     if not os.path.exists(path) or os.path.getsize(path) == 0:
         return pd.DataFrame()
@@ -117,12 +116,9 @@ def load_jsonl(path: str) -> pd.DataFrame:
     except ValueError:
         return pd.DataFrame()
 
-# --------------------------------------------------
-# Streamlit Config
-# --------------------------------------------------
 st.set_page_config(page_title="Misinformation Risk Dashboard", layout="wide", initial_sidebar_state="expanded")
 
-# Custom CSS for better styling
+# Define custom CSS styles for dashboard cards and headers
 st.markdown("""
     <style>
     .main-header {
@@ -159,9 +155,7 @@ st.markdown("""
     </div>
     """, unsafe_allow_html=True)
 
-# --------------------------------------------------
-# Sidebar - Auto Refresh Controls
-# --------------------------------------------------
+# Sidebar configuration and data file paths
 st.sidebar.markdown("### ⚙️ Dashboard Settings")
 st.sidebar.divider()
 
@@ -170,44 +164,35 @@ refresh_interval = 600  # 2 minutes
 
 st.sidebar.success(f"✅ Auto-refresh enabled: Every 5 minutes")
 
+# Data file paths for velocity metrics and article details
 VELOCITY_FILE = "output/velocity.jsonl"
 ARTICLE_FILE = "output/articles.jsonl"
 
-# --------------------------------------------------
-# Load Data
-# --------------------------------------------------
+# Load data from JSONL files
 velocity_df = load_jsonl(VELOCITY_FILE)
 article_df = load_jsonl(ARTICLE_FILE)
 
-# Only velocity is mandatory
+# Velocity data is required; stop execution if not available
 if velocity_df.empty:
     st.warning("Waiting for velocity data...")
     st.stop()
 
-# --------------------------------------------------
 # Normalize time using _pw_window_start
-# --------------------------------------------------
 velocity_df["_pw_window_start"] = pd.to_datetime(
     velocity_df["_pw_window_start"], errors="coerce"
 )
 
-# --------------------------------------------------
-# Keep ONLY latest window per event_id
-# --------------------------------------------------
+# Keep only the most recent time window for each event to get current state
 velocity_latest = (
     velocity_df
     .sort_values("_pw_window_start", ascending=False)
     .drop_duplicates(subset="event_id", keep="first")
 )
 
-# --------------------------------------------------
-# Sort by article_count descending
-# --------------------------------------------------
+# Sort events by article count in descending order to show trending events first
 velocity_latest = velocity_latest.sort_values("article_count", ascending=False)
-                       
-# --------------------------------------------------
-# Merge headlines (OPTIONAL)
-# --------------------------------------------------
+
+# Merge article details with velocity metrics (join article text and headline with velocity data)
 if not article_df.empty and "event_id" in article_df.columns:
     article_latest = (
         article_df
@@ -222,9 +207,8 @@ else:
     merged_df = velocity_latest.copy()
     merged_df["headline"] = "Headline not available"
 
-# --------------------------------------------------
-# Classify emotions and calculate risk scores (cached)
-# --------------------------------------------------
+# Classifies article emotion (fear, anger, sadness, joy, trust) and calculates risk score
+# Results are cached to improve performance
 @st.cache_data
 def classify_emotions(df):
     if df.empty:
@@ -235,12 +219,13 @@ def classify_emotions(df):
     risk_scores = []
     for _, row in df.iterrows():
         text = row["text"]
+        # Handle missing or empty text with neutral emotion scores
         if pd.isna(text) or text == "":
             emotions.append("unknown")
             emotion_scores_list.append({"fear": 0.2, "anger": 0.2, "sadness": 0.2, "joy": 0.2, "trust": 0.2})
             risk_scores.append(0.0)
         else:
-            # Emotion classification
+            # Classify dominant emotion from text
             result = classifier(text, candidate_labels=["fear", "anger", "sadness", "joy", "trust"])
             emotions.append(result["labels"][0])
             # Store emotion scores as dictionary
@@ -266,21 +251,17 @@ def classify_emotions(df):
 if not merged_df.empty:
     merged_df = classify_emotions(merged_df)
 
-# --------------------------------------------------
-# Sort by trend (article_count)
-# --------------------------------------------------
+# Sort merged data by article count (trending events first)
 merged_df = merged_df.sort_values(
     "article_count", ascending=False
 )
 
-# --------------------------------------------------
-# Create Tabs
-# --------------------------------------------------
+# Create tabs for different dashboard views
 tab1, tab2 = st.tabs(["🏠 Home", "📊 News Trend Analytics"])
 
 with tab1:
+    # Check if user selected an event for detailed view
     if "selected_event" in st.session_state:
-        # Detail view
         selected = st.session_state["selected_event"]
         event_data = merged_df[merged_df["event_id"] == selected].iloc[0]
         rank = merged_df.index.get_loc(event_data.name) + 1
@@ -289,12 +270,12 @@ with tab1:
         st.markdown("**Article Description:**")
         st.markdown(f'<p style="font-size: 16px; line-height: 1.6;">{event_data["text"]}</p>', unsafe_allow_html=True)
         
-        # Emotion and Risk Score Display
         col_left, col_right = st.columns([0.5, 0.5])
         
         with col_left:
             st.subheader("Emotion")
             emotion = event_data["emotion"]
+            # Map emotions to color and emoji for visual representation
             if emotion == "joy":
                 emoji = "😄"
                 color = "green"
@@ -315,7 +296,7 @@ with tab1:
                 color = "gray"
             st.markdown(f'<div style="background-color: {color}; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-size: 18px;">{emoji}<br><small>{emotion.upper()}</small></div>', unsafe_allow_html=True)
             
-            # Emotion pie chart
+            # Extract and prepare emotion scores for pie chart visualization
             emotion_scores = event_data["emotion_scores"]
             emotion_df = pd.DataFrame({
                 "emotions": list(emotion_scores.keys()),
@@ -347,7 +328,7 @@ with tab1:
             risk_score = event_data["risk_score"]
             risk_cat = risk_category(risk_score)
             
-            # Circular progress bar using custom HTML/CSS
+            # Select color based on risk level for visual indicator
             if risk_score <= 10:
                 risk_color = "#4CAF50"
             elif risk_score <= 30:
@@ -374,21 +355,18 @@ with tab1:
             </div>
             ''', unsafe_allow_html=True)
         
-        # Trend section
         st.divider()
         st.subheader("Article Velocity Trend")
         
-        # Get velocity data for selected event from velocity_df
+        # Display time series chart showing article publication rate for selected event
         if not velocity_df.empty:
             event_velocity = velocity_df[velocity_df["event_id"] == selected]
             if not event_velocity.empty:
-                # Sort by _pw_window_start and prepare data
+                # Sort by timestamp and convert to datetime
                 event_velocity_sorted = event_velocity.sort_values('_pw_window_start')
-                # Convert _pw_window_start to datetime
                 event_velocity_sorted['_pw_window_start'] = pd.to_datetime(event_velocity_sorted['_pw_window_start'], errors='coerce')
                 trend_df = event_velocity_sorted[['_pw_window_start', 'article_count']].dropna()
                 
-                # Plot velocity trend
                 if not trend_df.empty:
                     st.line_chart(trend_df.set_index('_pw_window_start')['article_count'], height=250, use_container_width=True)
         
@@ -396,9 +374,10 @@ with tab1:
             del st.session_state["selected_event"]
             st.rerun()
     else:
+        # Display trending news list with summary statistics
         st.header("Trending News")
         
-        # Display overall statistics
+        # Display key statistics about trending events
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
         
         with col_stat1:
@@ -410,6 +389,7 @@ with tab1:
             """, unsafe_allow_html=True)
         
         with col_stat2:
+            # Calculate average article count per event
             avg_articles = merged_df['article_count'].mean() if not merged_df.empty else 0
             st.markdown(f"""
             <div class="stat-card">
@@ -428,6 +408,7 @@ with tab1:
             """, unsafe_allow_html=True)
         
         with col_stat4:
+            # Count events with high misinformation risk (>70%)
             high_risk = len(merged_df[merged_df['risk_score'] > 70]) if 'risk_score' in merged_df.columns else 0
             st.markdown(f"""
             <div class="stat-card">
@@ -439,7 +420,7 @@ with tab1:
         
         st.divider()
         
-        # Column headers
+        # Display column headers for trending news table
         col1, col2, col3, col4 = st.columns([0.05, 0.55, 0.2, 0.2])
         with col1:
             st.markdown("**Rank**")
@@ -459,6 +440,7 @@ with tab1:
                     st.session_state["selected_event"] = row["event_id"]
                     st.rerun()
             with col3:
+                # Display emotion badge with color and emoji
                 emotion = row["emotion"]
                 if emotion == "joy":
                     emoji = "😄"
@@ -480,6 +462,7 @@ with tab1:
                     color = "gray"
                 st.markdown(f'<div style="background-color: {color}; color: white; padding: 5px; border-radius: 5px; text-align: center; font-weight: bold;">{emoji}<br><small>{emotion.upper()}</small></div>', unsafe_allow_html=True)
             with col4:
+                # Calculate and display risk score for each article in list
                 risk_score = zero_shot_risk_score(row["text"])
                 if risk_score <= 10:
                     risk_color = "#4CAF50"
@@ -492,7 +475,6 @@ with tab1:
                 else:
                     risk_color = "#F44336"
                 
-                # Circular progress bar for risk
                 st.markdown(f'''
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
                     <svg width="80" height="80" style="transform: rotate(-90deg);">
@@ -508,9 +490,7 @@ with tab1:
                 ''', unsafe_allow_html=True)
             st.divider()
 
-# --------------------------------------------------
-# Analytics Tab - News Trend Over Time
-# --------------------------------------------------
+# Analytics and trend visualization tab
 with tab2:
     st.header("📊 News Trend Analytics")
     st.markdown("Visualize how many articles are being published over time for different events")
@@ -518,10 +498,10 @@ with tab2:
     st.divider()
     
     if not velocity_df.empty:
-        # Prepare data for overall trend
+        # Sort velocity data by timestamp for time series analysis
         velocity_df_sorted = velocity_df.sort_values("_pw_window_start")
         
-        # Total articles over time
+        # Display aggregate article volume across all events
         st.subheader("Total News Volume Over Time")
         total_trend = velocity_df_sorted.groupby("_pw_window_start")["article_count"].sum().reset_index()
         total_trend.columns = ["Time", "Total Articles"]
@@ -545,14 +525,16 @@ with tab2:
         
         st.divider()
         
-        # Top events over time
+        # Compare article trends across top 5 trending events
         st.subheader("Top 5 Events - Articles Over Time")
         
-        # Get top 5 events by article count
+        # Identify top 5 events by maximum article count
         top_events = velocity_df.groupby("event_id")["article_count"].max().nlargest(5).index.tolist()
         
+        # Create multi-line chart comparing top events
         fig_multi = go.Figure()
         
+        # Add trace for each top event
         for event_id in top_events:
             event_data = velocity_df[velocity_df["event_id"] == event_id].sort_values("_pw_window_start")
             if not event_data.empty:
@@ -577,7 +559,7 @@ with tab2:
         
         st.divider()
         
-        # Event selection for detailed view
+        # Allow user to select individual event for detailed trend analysis
         st.subheader("Detailed Event Trend")
         selected_event_analytics = st.selectbox(
             "Select an event to view detailed trend",
@@ -589,6 +571,7 @@ with tab2:
             event_trend = velocity_df[velocity_df["event_id"] == selected_event_analytics].sort_values("_pw_window_start")
             
             if not event_trend.empty:
+                # Display key metrics for selected event
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
@@ -605,7 +588,7 @@ with tab2:
                 
                 st.markdown("")
                 
-                # Detailed trend chart
+                # Create bar chart showing article count trend over time
                 fig_detail = px.bar(
                     event_trend,
                     x="_pw_window_start",
@@ -625,15 +608,16 @@ with tab2:
     else:
         st.warning("No velocity data available yet. Please wait for the pipeline to generate data.")
 
-
+# Auto-refresh page at specified interval to show latest data
 if refresh_interval > 0:
-    # Use a placeholder to show refresh countdown
+    # Display countdown timer for next refresh
     refresh_placeholder = st.empty()
     
+    # Count down and update display every second
     for remaining in range(refresh_interval, 0, -1):
         with refresh_placeholder.container():
             st.sidebar.info(f"⏱️ Next refresh in {remaining}s...")
         time.sleep(1)
     
-    # Trigger page rerun
+    # Trigger page rerun to load latest data
     st.rerun()
