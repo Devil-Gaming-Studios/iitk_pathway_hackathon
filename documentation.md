@@ -117,6 +117,20 @@ Velocity trends and emotion distributions provide transparency into system decis
 
 ---
 
+## Example Scenario & Demonstration
+
+The system is demonstrated using a simulated continuous news stream. 
+Incoming articles are replayed in real time using Pathway’s streaming CSV replay.
+
+A lightweight Streamlit dashboard is used to visualize:
+- Trending events
+- Article velocity
+- Emotional signals
+- Misinformation risk scores
+
+As new articles arrive, the dashboard updates automatically, demonstrating
+how the system reacts to streaming data and produces real-time insights.
+
 ## Conclusion
 
 The Misinformation Risk Dashboard demonstrates how streaming data, modern NLP, and real-time visualization can be combined to detect and analyze misinformation effectively.  
