@@ -51,9 +51,9 @@ In a world of rapid information flow, identifying "fake news" is a race against 
 ---
 
 ## 🛠️ Project Setup
-
-### Step 1: Clone the Repository
 ```bash
+### Step 1: Clone the Repository
+
 git clone [https://github.com/your-username/misinformation-dashboard.git](https://github.com/your-username/misinformation-dashboard.git)
 cd misinformation-dashboard
 
