@@ -54,7 +54,7 @@ In a world of rapid information flow, identifying "fake news" is a race against 
 ```bash
 ### Step 1: Clone the Repository
 
-git clone [https://github.com/your-username/misinformation-dashboard.git](https://github.com/your-username/misinformation-dashboard.git)
+git clone [https://github.com/Devil-Gaming-Studios/misinformation-dashboard.git](https://github.com/Devil-Gaming-Studios/iitk_pathway_hackathon.git)
 cd misinformation-dashboard
 
 Step 2: Build the Image (Docker)
